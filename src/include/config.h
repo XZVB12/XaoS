@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 // XaoS release
-#define XaoS_VERSION "4.1"
+#define XaoS_VERSION "4.2"
 
 // URLs
 #define HELP_URL "https://github.com/xaos-project/XaoS/wiki"
@@ -10,6 +10,7 @@
 #define DOWNLOAD_URL "https://github.com/xaos-project/XaoS/releases"
 #define FEEDBACK_URL "https://github.com/xaos-project/XaoS/issues"
 #define FORUM_URL "https://groups.google.com/d/forum/xaos-users"
+#define FRACTALINFO_URL "https://github.com/xaos-project/XaoS/wiki/Fractal-Types#"
 
 // File locations
 #define DATAPATH "/usr/share/XaoS"

@@ -1,6 +1,9 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+#include <iomanip>
+#include <QFile>
+#include <QTextStream>
 #include <QMessageBox>
 #include <QSettings>
 
@@ -63,7 +66,7 @@ const char *const uih_colornames[] = {"white", "black", "red", NULL};
  * Zoltan Kovacs <kovzol@math.u-szeged.hu>, 2003-01-05
  */
 
-#define MAX_MENUDIALOGS_I18N 115
+#define MAX_MENUDIALOGS_I18N 150
 #define Register(variable) variable = &menudialogs_i18n[no_menudialogs_i18n]
 static menudialog menudialogs_i18n[MAX_MENUDIALOGS_I18N];
 // static int no_menudialogs_i18n;
@@ -78,7 +81,8 @@ static menudialog *uih_perturbationdialog, *uih_juliadialog,
     *uih_bailoutdialog, *uih_threaddialog, *saveanimdialog, *uih_juliamodedialog,
     *uih_textposdialog, *uih_fastmodedialog, *uih_timedialog, *uih_numdialog,
     *uih_fpdialog, *palettedialog, *uih_cyclingdialog, *palettegradientdialog,
-    *uih_renderimgdialog
+    *uih_renderimgdialog, *palettepickerdialog, *loadgpldialog, *savegpldialog,
+    *uih_palettecolorsdialog
 #ifdef USE_SFFE
     ,
     *uih_sffedialog, *uih_sffeinitdialog
@@ -283,13 +287,31 @@ void uih_registermenudialogs_i18n(void)
     DIALOGPALSLIDER_I("Visualiser:", 0);
     NULL_I();
 
+    Register(uih_palettecolorsdialog);
+    for (int colidx = 0; colidx < 31; colidx++) {
+        DIALOGSTR_I(TR("Dialog", "Color:"), "000000");
+    }
+    NULL_I();
+
+    Register(palettepickerdialog);
+    DIALOGPALPICKER_I("Palette:", 0);
+    NULL_I();
+
+    Register(loadgpldialog);
+    DIALOGIFILE_I(TR("Dialog", "Load Palette Config"), "file*.gpl");
+    NULL_I();
+
+    Register(savegpldialog);
+    DIALOGOFILE_I(TR("Dialog", "Save Palette Config"), "file*.gpl");
+    NULL_I();
+
     Register(uih_cyclingdialog);
     DIALOGINT_I(TR("Dialog", "Frames per second:"), 0);
     NULL_I();
 
 #ifdef USE_SFFE
     Register(uih_sffedialog);
-    DIALOGSTR_I(TR("Dialog", "Formula:"), USER_FORMULA);
+    DIALOGILIST_I(TR("Dialog", "Formula"), USER_FORMULA);
     NULL_I();
 
     Register(uih_sffeinitdialog);
@@ -645,6 +667,11 @@ static menudialog *uih_getpalettedialog(struct uih_context *uih)
     return (palettedialog);
 }
 
+static menudialog *uih_palettepickerdialog(struct uih_context *uih)
+{
+    return (palettepickerdialog);
+}
+
 static menudialog *uih_getpalettegradientdialog(struct uih_context *uih)
 {
     if (uih != NULL) {
@@ -703,11 +730,11 @@ static void uih_palette(struct uih_context *uih, dialogparam *p)
         uih_newimage(uih);
     }
     uih->paletteshift = shift;
+    uih->palettepickerenabled = 0;
 }
 
 static void uih_palettegradient(struct uih_context *uih, dialogparam *p)
 {
-    fflush(stdout);
     int n1 = uih->palettetype;
     int n2 = uih->paletteseed;
     int shift = uih->paletteshift;
@@ -732,6 +759,102 @@ static void uih_palettegradient(struct uih_context *uih, dialogparam *p)
         uih_newimage(uih);
     }
     uih->paletteshift = shift;
+    uih->palettepickerenabled = 0;
+}
+
+static void uih_palettecolors(struct uih_context *uih, dialogparam *p){
+    unsigned char colors[31][3];
+    memset(colors, 0, sizeof (colors));
+    for(int i=0; i < 31; i++) {
+        rgb_t color;
+        hextorgb(p[i].dstring, color);
+        colors[i][0] = color[0];
+        colors[i][1] = color[1];
+        colors[i][2] = color[2];
+    }
+    mkcustompalette(uih->palette, colors);
+    uih_newimage(uih);
+    uih->palettepickerenabled = 1;
+}
+
+static void uih_palettepicker(struct uih_context *uih, dialogparam *p)
+{
+    uih_newimage(uih);
+    uih->palettepickerenabled = 1;
+}
+
+static void uih_loadgpl(struct uih_context *uih, xio_constpath d)
+{
+    QFile *loadfile = new QFile(d);
+    unsigned char colors[31][3];
+    memset(colors, 0, sizeof (colors));
+
+    if (loadfile->open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(loadfile);
+        QStringList colorvals= in.readAll().split("\n");
+        if((int)colorvals.size() != 36) {
+            uih_error(uih, "Corrupted palette File");
+            loadfile->close();
+            return;
+        }
+
+        for(int i = 4; i < 35; i++) {
+            QStringList currcolors = colorvals[i].split(QRegExp("\\s+"));
+            int r = currcolors[0].toInt();
+            int g = currcolors[1].toInt();
+            int b = currcolors[2].toInt();
+
+            if (r < 0 || r > 255 ||
+                g < 0 || g > 255 ||
+                b < 0 || b > 255) {
+                uih_error(uih, "RGB out of range. Failed to load palette.");
+                loadfile->close();
+                return;
+            }
+
+            colors[i-4][0] = r;
+            colors[i-4][1] = g;
+            colors[i-4][2] = b;
+        }
+        mkcustompalette(uih->palette, colors);
+        loadfile->close();
+        char s[256];
+        sprintf(s, TR("Message", "File %s opened."), d);
+        uih_message(uih, s);
+
+    } else {
+        uih_error(uih, "Failed to open palette configuration");
+        return;
+    }
+
+    uih_newimage(uih);
+    uih->palettepickerenabled = 1;
+}
+
+static void uih_savegpl(struct uih_context *uih, xio_constpath d) {
+    QFile *savefile = new QFile(d);
+    unsigned char colors[31][3];
+
+    if(savefile->open(QIODevice::WriteOnly | QIODevice::Text)) {
+            getDEFSEGMENTColor(colors);
+            QTextStream stream(savefile);
+            stream << "GIMP Palette" << "\n";
+            stream << "Name: XaoS_Palette" << "\n";
+            stream << "Columns: 16" << "\n" << "#" << "\n";
+            for(int i=0; i < 31; i++){
+                char s[256];
+                sprintf(s, "%3d %3d %3d", colors[i][0], colors[i][1], colors[i][2]);
+                stream << s << "\t color_" << QString::number(i) << "\n";
+            }
+            savefile->close();
+            char s[256];
+            sprintf(s, TR("Message", "File %s saved."), d);
+            uih_message(uih, s);
+
+        } else {
+        uih_error(uih, "Failed to save palette Configuration");
+    }
+    uih->palettepickerenabled = 1;
 }
 
 static int uih_rotateselected(struct uih_context *c, int n)
@@ -1196,6 +1319,16 @@ void uih_registermenus_i18n(void)
     MENUCDIALOG_I("palettemenu", NULL, TR("Menu", "Custom palette"), "palettegradient",
                   0, uih_palettegradient, uih_getpalettegradientdialog);
     MENUSEPARATOR_I("palettemenu");
+    MENUDIALOG_I("fractal", NULL, TR("Menu", "Palette Colors"), "palettecolors",
+                 MENUFLAG_NOMENU | MENUFLAG_INTERRUPT, uih_palettecolors,
+                 uih_palettecolorsdialog);
+    MENUCDIALOG_I("palettemenu", "x", TR("Menu", "Palette Editor"), "palettepicker",
+                  0, uih_palettepicker, uih_palettepickerdialog);
+    MENUDIALOG_I("palettemenu", NULL, TR("Menu", "Load Palette Config"), "loadgpl",
+                 0, uih_loadgpl, loadgpldialog);
+    MENUDIALOG_I("palettemenu", NULL, TR("Menu", "Save Palette Config"), "savegpl",
+                 0, uih_savegpl, savegpldialog);
+    MENUSEPARATOR_I("palettemenu");
     MENUNOPCB_I("palettemenu", "y", TR("Menu", "Color cycling"), "cycling", 0,
                 uih_cyclingsw, uih_cyclingselected);
     MENUNOPCB_I("palettemenu", "Y", TR("Menu", "Reversed color cycling"),
@@ -1537,6 +1670,13 @@ void uih_unregistermenus(void)
 #ifdef USE_SFFE
 void uih_sffein(uih_context *c, const char *text)
 {
+    // Keep only top 10 entries
+    QSettings settings;
+    QStringList values = settings.value("Formulas/UserFormulas").toStringList();
+    values.push_front(text);
+    while (values.size() > 10) values.pop_back();
+    settings.setValue("Formulas/UserFormulas", values);
+
     uih_sffeset(c, c->fcontext->userformula, text);
 }
 

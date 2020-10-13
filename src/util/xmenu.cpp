@@ -358,6 +358,7 @@ void menu_activate(const menuitem *item, struct uih_context *c, dialogparam *d)
                     switch (di[0].type) {
                         case DIALOG_INT:
                         case DIALOG_PALSLIDER:
+                        case DIALOG_PALPICKER:
                         case DIALOG_CHOICE:
                         case DIALOG_ONOFF:
                             ((void (*)(struct uih_context * c, int))
@@ -374,6 +375,7 @@ void menu_activate(const menuitem *item, struct uih_context *c, dialogparam *d)
                             break;
                         case DIALOG_STRING:
                         case DIALOG_KEYSTRING:
+                        case DIALOG_ILIST:
                             ((void (*)(struct uih_context * c, char *))
                                  item->function)(c, d[0].dstring);
                             break;
